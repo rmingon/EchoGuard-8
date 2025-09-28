@@ -4,6 +4,14 @@ This repository contains the full design files, schematics, and firmware for a *
 a custom PCB with **8 ATGM336H GNSS modules** and an **STM32F103 MCU** that collects data from all receivers,
 performs **real-time fusion**, and outputs the combined solution over **SPI**.
 
+![3d](./3d.png)
+
+## Support on falconEdge
+
+[FalconEdge repository](https://github.com/rmingon/Falcon-Edge)
+
+![falconEdge_support](./falcon-edge-support.png)
+
 ---
 
 ## Project Overview
@@ -95,7 +103,7 @@ Features:
 
 ---
 
-## 📂 Repository Structure
+## Repository Structure
 
 ```
 /hardware       # KiCad project files, schematics, PCB layout
@@ -112,3 +120,7 @@ Features:
 3. **Connect SPI** to your master controller (e.g., Raspberry Pi or another STM32).
 4. **Power the board** with 3.3 V regulated input.
 5. **Start reading fused GPS data** from SPI.
+
+## License
+
+This project is licensed under the **CERN Open Hardware Licence Version 2**. See `LICENSE` file for full terms.
