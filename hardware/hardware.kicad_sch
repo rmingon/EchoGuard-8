@@ -4,6 +4,12 @@
 	(generator_version "9.0")
 	(uuid "f3b7aafd-186b-4744-9db2-48ed432acba7")
 	(paper "A3")
+	(title_block
+		(title "GPS_ARRAY_FUSION")
+		(date "2025-09-28")
+		(rev "0.1")
+		(company "RMINGON")
+	)
 	(lib_symbols
 		(symbol "ATGM336H:ATGM336H-5N31"
 			(exclude_from_sim no)
