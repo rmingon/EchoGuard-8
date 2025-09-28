@@ -6,7 +6,7 @@ performs **real-time fusion**, and outputs the combined solution over **SPI**.
 
 ---
 
-## 🖼️ Project Overview
+## Project Overview
 
 | PCB Layout | Schematic     | 3D View |
 | ---------- | ------------- | ------- |
@@ -14,7 +14,7 @@ performs **real-time fusion**, and outputs the combined solution over **SPI**.
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 - **8× ATGM336H GPS modules** for redundant positioning
 - **STM32F103** microcontroller for acquisition and fusion
@@ -105,7 +105,7 @@ Features:
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 1. **Assemble the PCB** and mount the GPS modules and STM32.
 2. **Flash the firmware** using ST-Link.
