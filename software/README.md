@@ -18,6 +18,29 @@ The hardware connects 8× ATGM336H modules using nets `TX_1..TX_8` / `RX_1..RX_8
 Only GNSS modules #1..#3 are on hardware USART pin pairs; the rest need a software UART (or other method) if all
 8 modules must be received concurrently.
 
+## SPI Fused Output (J11)
+
+Hardware SPI connector `J11` (JST-SH 1x06):
+
+- Pin 1: `SS` (PB1, active-low)
+- Pin 2: `MOSI` (PB5)
+- Pin 3: `MISO` (PB4)
+- Pin 4: `SCK` (PB3)
+- Pin 5: `GND`
+- Pin 6: `+3.3V`
+
+Firmware exposes the fused GNSS solution as an `SPI1` slave (remapped to PB3/PB4/PB5). Each `SS` assertion starts
+a streamed `SPI_FUSION_PACKET_SIZE`-byte packet on `MISO` (see `include/spi_fusion.h`).
+
+Packet (little-endian, `SPI_FUSION_PACKET_SIZE == 32`):
+
+- `u32 magic` = `0x31464745` (`EGF1`)
+- `u32 tick_ms`
+- `i32 lat_e7`, `i32 lon_e7`, `i32 alt_cm`
+- `u16 avg_hdop_centi`, `u16 max_residual_cm`
+- `u8 status`, `u8 used_modules`, `u8 rejected_modules`, `u8 has_fix`
+- `u16 crc16_ccitt` (over first 30 bytes)
+
 ## Build / Upload
 
 - Install PlatformIO CLI (or use the VS Code PlatformIO extension).

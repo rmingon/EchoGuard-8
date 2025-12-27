@@ -223,6 +223,16 @@ bool GnssFusion_GetResult(GnssFusionResult *out) {
 	return true;
 }
 
+bool GnssFusion_GetResultFromISR(GnssFusionResult *out) {
+	if (out == NULL) {
+		return false;
+	}
+	UBaseType_t saved = taskENTER_CRITICAL_FROM_ISR();
+	*out = latest;
+	taskEXIT_CRITICAL_FROM_ISR(saved);
+	return true;
+}
+
 bool GnssFusion_GetModuleFaultScore(uint8_t module_index, uint16_t *out_score) {
 	if (out_score == NULL || module_index < 1 || module_index > GNSS_MODULE_COUNT) {
 		return false;

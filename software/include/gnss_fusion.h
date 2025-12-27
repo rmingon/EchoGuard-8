@@ -34,6 +34,7 @@ typedef struct {
 void GnssFusion_Init(void);
 void GnssFusion_Task(void *argument);
 bool GnssFusion_GetResult(GnssFusionResult *out);
+bool GnssFusion_GetResultFromISR(GnssFusionResult *out);
 bool GnssFusion_GetModuleFaultScore(uint8_t module_index, uint16_t *out_score);
 
 #ifdef __cplusplus

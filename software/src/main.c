@@ -8,6 +8,7 @@
 #include "gnss.h"
 #include "gnss_fusion.h"
 #include "gnss_uart.h"
+#include "spi_fusion.h"
 
 static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -117,6 +118,16 @@ void USART3_IRQHandler(void)
 	GnssUart_IrqHandler(USART3);
 }
 
+void SPI1_IRQHandler(void)
+{
+	SpiFusion_SpiIrqHandler();
+}
+
+void EXTI1_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
+}
+
 void TIM2_IRQHandler(void)
 {
 	GnssUart_TimIrqHandler();
@@ -130,6 +141,7 @@ int main(void)
 
 	Gnss_Init(9600);
 	GnssFusion_Init();
+	SpiFusion_Init();
 
 	xTaskCreate(Gnss_Task, "gnss", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
 	xTaskCreate(GnssFusion_Task, "fusion", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
