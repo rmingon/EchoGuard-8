@@ -3,6 +3,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <stdio.h>
+
+#include "gnss.h"
+#include "gnss_fusion.h"
 #include "gnss_uart.h"
 
 static void SystemClock_Config(void);
@@ -22,6 +26,66 @@ static void LedTask(void *argument)
 	}
 }
 
+static const char *FusionStatusToString(GnssFusionStatus status)
+{
+	switch (status)
+	{
+	case GNSS_FUSION_NO_FIX:
+		return "NO_FIX";
+	case GNSS_FUSION_OK:
+		return "OK";
+	case GNSS_FUSION_DEGRADED:
+		return "DEGRADED";
+	case GNSS_FUSION_INTERFERENCE:
+		return "INTERFERENCE";
+	default:
+		return "?";
+	}
+}
+
+static void PrintCoordE7(const char *name, int32_t value_e7)
+{
+	int64_t v = (int64_t)value_e7;
+	char sign = '+';
+	if (v < 0)
+	{
+		sign = '-';
+		v = -v;
+	}
+
+	int32_t deg = (int32_t)(v / 10000000);
+	int32_t frac = (int32_t)(v % 10000000);
+	printf("%s=%c%ld.%07ld", name, sign, (long)deg, (long)frac);
+}
+
+static void FusionPrintTask(void *argument)
+{
+	(void)argument;
+	while (1)
+	{
+		GnssFusionResult r = {0};
+		if (GnssFusion_GetResult(&r) && r.has_fix)
+		{
+			printf("[fusion %s used=%u rej=%u hdop=%u res=%ucm] ",
+			       FusionStatusToString(r.status),
+			       (unsigned)r.used_modules,
+			       (unsigned)r.rejected_modules,
+			       (unsigned)r.avg_hdop_centi,
+			       (unsigned)r.max_residual_cm);
+			PrintCoordE7("lat", r.lat_e7);
+			printf(" ");
+			PrintCoordE7("lon", r.lon_e7);
+			printf(" alt=%.2fm tick=%lu\r\n", (double)r.alt_cm / 100.0, (unsigned long)r.last_update_tick);
+		}
+		else
+		{
+			printf("[fusion %s] no fix\r\n", FusionStatusToString(r.status));
+		}
+
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
+}
+
 void SVC_Handler(void)
 {
 	vPortSVCHandler();
@@ -38,15 +102,38 @@ void SysTick_Handler(void)
 	xPortSysTickHandler();
 }
 
+void USART1_IRQHandler(void)
+{
+	GnssUart_IrqHandler(USART1);
+}
+
+void USART2_IRQHandler(void)
+{
+	GnssUart_IrqHandler(USART2);
+}
+
+void USART3_IRQHandler(void)
+{
+	GnssUart_IrqHandler(USART3);
+}
+
+void TIM2_IRQHandler(void)
+{
+	GnssUart_TimIrqHandler();
+}
+
 int main(void)
 {
 	HAL_Init();
 	SystemClock_Config();
 	MX_GPIO_Init();
 
-	GnssUart_GpioInit();
-	GnssUart_HardwareUartsInit(9600);
+	Gnss_Init(9600);
+	GnssFusion_Init();
 
+	xTaskCreate(Gnss_Task, "gnss", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
+	xTaskCreate(GnssFusion_Task, "fusion", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
+	xTaskCreate(FusionPrintTask, "print", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
 	xTaskCreate(LedTask, "led", 128, NULL, tskIDLE_PRIORITY + 1, NULL);
 	vTaskStartScheduler();
 

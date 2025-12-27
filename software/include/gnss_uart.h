@@ -2,6 +2,8 @@
 
 #include "stm32f1xx_hal.h"
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,7 +28,13 @@ void GnssUart_GpioInit(void);
 void GnssUart_HardwareUartsInit(uint32_t baudrate);
 UART_HandleTypeDef *GnssUart_GetHardwareHandle(uint8_t module_index);
 
+void GnssUart_StartHardwareRx(void);
+size_t GnssUart_ReadBytes(uint8_t module_index, uint8_t *dst, size_t max_len);
+void GnssUart_IrqHandler(USART_TypeDef *instance);
+
+void GnssUart_SoftUartInit(uint32_t baudrate);
+void GnssUart_TimIrqHandler(void);
+
 #ifdef __cplusplus
 }
 #endif
-
