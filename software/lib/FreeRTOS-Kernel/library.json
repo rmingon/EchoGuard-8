@@ -1,0 +1,10 @@
+{
+  "name": "FreeRTOS-Kernel-STM32F103",
+  "version": "11.1.0",
+  "description": "Vendored subset of FreeRTOS Kernel sources for STM32F103 (Cortex-M3, GCC/ARM_CM3 port).",
+  "build": {
+    "flags": [
+      "-Isrc/portable/GCC/ARM_CM3"
+    ]
+  }
+}
