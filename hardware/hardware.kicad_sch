@@ -4597,12 +4597,6 @@
 		(uuid "50557a5d-f944-4cc8-a1f2-e27cc44f6cb5")
 	)
 	(junction
-		(at 303.53 40.64)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "5357cfcc-7cc2-4815-9a9d-44b1444d1899")
-	)
-	(junction
 		(at 27.94 195.58)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4949,12 +4943,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "c7b33134-aa2b-44c7-ab82-e4749689f5ca")
-	)
-	(junction
-		(at 314.96 38.1)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "cb138815-b67d-4c30-91d0-53fab768e34a")
 	)
 	(junction
 		(at 128.27 184.15)
@@ -5447,16 +5435,6 @@
 			(type default)
 		)
 		(uuid "15a03305-b257-4df8-aa94-821a8d4afd35")
-	)
-	(wire
-		(pts
-			(xy 314.96 45.72) (xy 314.96 48.26)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "15acba28-68fa-443b-8f92-95e879d3fb9e")
 	)
 	(wire
 		(pts
@@ -7030,7 +7008,7 @@
 	)
 	(wire
 		(pts
-			(xy 303.53 40.64) (xy 304.8 40.64)
+			(xy 293.37 40.64) (xy 304.8 40.64)
 		)
 		(stroke
 			(width 0)
@@ -7150,16 +7128,6 @@
 	)
 	(wire
 		(pts
-			(xy 314.96 40.64) (xy 314.96 38.1)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "72e437e5-f3f8-4df7-9de5-d033a58674f9")
-	)
-	(wire
-		(pts
 			(xy 21.59 53.34) (xy 26.67 53.34)
 		)
 		(stroke
@@ -7187,16 +7155,6 @@
 			(type default)
 		)
 		(uuid "7337a933-74e4-4d23-a85a-bdb589047c15")
-	)
-	(wire
-		(pts
-			(xy 303.53 48.26) (xy 303.53 50.8)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "74525703-18ed-4a33-9a64-c155505220d6")
 	)
 	(wire
 		(pts
@@ -7750,7 +7708,7 @@
 	)
 	(wire
 		(pts
-			(xy 293.37 38.1) (xy 314.96 38.1)
+			(xy 293.37 38.1) (xy 318.77 38.1)
 		)
 		(stroke
 			(width 0)
@@ -8417,16 +8375,6 @@
 			(type default)
 		)
 		(uuid "b60bc794-fa80-4860-90e4-7d6c66eeaa8e")
-	)
-	(wire
-		(pts
-			(xy 303.53 40.64) (xy 303.53 43.18)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b7965330-593d-4460-8c12-f74ec793f7af")
 	)
 	(wire
 		(pts
@@ -9120,16 +9068,6 @@
 	)
 	(wire
 		(pts
-			(xy 314.96 38.1) (xy 318.77 38.1)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "de4b5950-5467-4175-911e-ff63f71e6060")
-	)
-	(wire
-		(pts
 			(xy 184.15 110.49) (xy 195.58 110.49)
 		)
 		(stroke
@@ -9737,16 +9675,6 @@
 			(type default)
 		)
 		(uuid "fb4a1158-39fc-4d2b-bf9e-1c69fdb148c9")
-	)
-	(wire
-		(pts
-			(xy 293.37 40.64) (xy 303.53 40.64)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fb578118-5523-404c-928d-911edcabc004")
 	)
 	(wire
 		(pts
@@ -16323,84 +16251,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+3.3V")
-		(at 303.53 50.8 180)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "4016998b-5a56-4236-9345-ac5f4b6d46f9")
-		(property "Reference" "#PWR016"
-			(at 303.53 46.99 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+3.3V"
-			(at 303.53 55.88 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 303.53 50.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 303.53 50.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 303.53 50.8 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "bb445d5d-a942-4585-934c-86eb99096064")
-		)
-		(instances
-			(project "hardware"
-				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
-					(reference "#PWR016")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:C_Small")
 		(at 27.94 199.39 0)
 		(unit 1)
@@ -17518,85 +17368,6 @@
 			(project "hardware"
 				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
 					(reference "C21")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 303.53 45.72 180)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "5337c8be-15f5-4c62-b449-ee70fb233d61")
-		(property "Reference" "R7"
-			(at 308.61 45.72 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "10k"
-			(at 306.07 45.72 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 303.53 45.72 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 303.53 45.72 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 303.53 45.72 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "7a5a6d70-1862-4d6c-9f9d-b3a994ec2263")
-		)
-		(pin "2"
-			(uuid "20031afc-f1d9-4ace-9532-ec9361acfb26")
-		)
-		(instances
-			(project "hardware"
-				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
-					(reference "R7")
 					(unit 1)
 				)
 			)
@@ -19160,84 +18931,6 @@
 			(project "hardware"
 				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
 					(reference "#PWR061")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 314.96 48.26 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "5f6ab447-2343-4685-aeec-7c73a801199d")
-		(property "Reference" "#PWR017"
-			(at 314.96 54.61 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GND"
-			(at 314.96 53.34 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 314.96 48.26 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 314.96 48.26 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 314.96 48.26 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "d40f5be2-10b0-45c0-b448-21ae5b73148c")
-		)
-		(instances
-			(project "hardware"
-				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
-					(reference "#PWR017")
 					(unit 1)
 				)
 			)
@@ -22849,85 +22542,6 @@
 			(project "hardware"
 				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
 					(reference "R24")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 314.96 43.18 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "94cea3b1-afa3-4c5e-bee1-ac32fde6abbf")
-		(property "Reference" "R6"
-			(at 317.5 43.18 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "10k"
-			(at 320.04 43.18 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 314.96 43.18 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 314.96 43.18 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 314.96 43.18 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "f8e7997b-9ab6-418d-b48a-935edf86c306")
-		)
-		(pin "2"
-			(uuid "6b98cc86-2b82-472f-9377-e2fb21f951e0")
-		)
-		(instances
-			(project "hardware"
-				(path "/f3b7aafd-186b-4744-9db2-48ed432acba7"
-					(reference "R6")
 					(unit 1)
 				)
 			)
