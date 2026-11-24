@@ -155,10 +155,13 @@ void GnssUart_GpioInit(void) {
 
 		GPIO_InitTypeDef gpio = {0};
 
-		/* RX: input (works for both HW UART and future SW UART). */
+		/*
+		 * RX: input (works for both HW UART and SW UART). Pull-up keeps the line at the UART
+		 * idle level when the module is not populated, so empty footprints don't feed noise.
+		 */
 		gpio.Pin = pins->rx_pin;
 		gpio.Mode = GPIO_MODE_INPUT;
-		gpio.Pull = GPIO_NOPULL;
+		gpio.Pull = GPIO_PULLUP;
 		HAL_GPIO_Init(pins->rx_port, &gpio);
 
 		/* TX: HW UART uses alternate function; otherwise default to GPIO output. */

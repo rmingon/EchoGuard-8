@@ -10,6 +10,7 @@
 #include "gnss_uart.h"
 #include "spi_fusion.h"
 
+void Rtt_Init(void);
 static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 
@@ -59,11 +60,60 @@ static void PrintCoordE7(const char *name, int32_t value_e7)
 	printf("%s=%c%ld.%07ld", name, sign, (long)deg, (long)frac);
 }
 
+/* PCB reference of the ATGM336H wired to each firmware module index (1..8). */
+static const char *const kGnssBoardRef[GNSS_MODULE_COUNT] = {
+	"U1", "U4", "U6", "U8", "U10", "U12", "U14", "U16",
+};
+
+static void PrintModulesStatus(void)
+{
+	uint32_t now = HAL_GetTick();
+	for (uint8_t i = 1; i <= GNSS_MODULE_COUNT; i++)
+	{
+		const GnssModuleState *m = Gnss_GetModule(i);
+		if (m == NULL)
+		{
+			continue;
+		}
+
+		printf("[gnss #%u %-3s] ", (unsigned)i, kGnssBoardRef[i - 1]);
+		if (m->last_rx_tick == 0)
+		{
+			printf("silent (err=%lu)\r\n", (unsigned long)m->nmea_checksum_errors);
+			continue;
+		}
+
+		bool alive = (now - m->last_rx_tick) <= 2000u;
+		printf("%s nmea=%lu err=%lu ",
+		       alive ? "alive" : "LOST ",
+		       (unsigned long)m->nmea_sentences,
+		       (unsigned long)m->nmea_checksum_errors);
+		if (m->has_fix && (now - m->last_fix_tick) <= 2000u)
+		{
+			printf("fix q=%u sats=%u hdop=%u.%02u ",
+			       (unsigned)m->fix_quality,
+			       (unsigned)m->satellites,
+			       (unsigned)(m->hdop_centi / 100u),
+			       (unsigned)(m->hdop_centi % 100u));
+			PrintCoordE7("lat", m->lat_e7);
+			printf(" ");
+			PrintCoordE7("lon", m->lon_e7);
+			printf("\r\n");
+		}
+		else
+		{
+			printf("no fix sats=%u\r\n", (unsigned)m->satellites);
+		}
+	}
+}
+
 static void FusionPrintTask(void *argument)
 {
 	(void)argument;
 	while (1)
 	{
+		PrintModulesStatus();
+
 		GnssFusionResult r = {0};
 		if (GnssFusion_GetResult(&r) && r.has_fix)
 		{
@@ -100,7 +150,14 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
 	HAL_IncTick();
-	xPortSysTickHandler();
+	/*
+	 * HAL_Init() starts SysTick before the scheduler exists. Ticking the kernel then walks
+	 * uninitialised task lists (NULL) and hard-faults, so only forward once it is running.
+	 */
+	if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+	{
+		xPortSysTickHandler();
+	}
 }
 
 void USART1_IRQHandler(void)
@@ -135,6 +192,7 @@ void TIM2_IRQHandler(void)
 
 int main(void)
 {
+	Rtt_Init();
 	HAL_Init();
 	SystemClock_Config();
 	MX_GPIO_Init();
@@ -145,7 +203,7 @@ int main(void)
 
 	xTaskCreate(Gnss_Task, "gnss", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
 	xTaskCreate(GnssFusion_Task, "fusion", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
-	xTaskCreate(FusionPrintTask, "print", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
+	xTaskCreate(FusionPrintTask, "print", 384, NULL, tskIDLE_PRIORITY + 1, NULL);
 	xTaskCreate(LedTask, "led", 128, NULL, tskIDLE_PRIORITY + 1, NULL);
 	vTaskStartScheduler();
 
@@ -159,13 +217,16 @@ static void SystemClock_Config(void)
 	RCC_OscInitTypeDef oscillator_config = {0};
 	RCC_ClkInitTypeDef clock_config = {0};
 
-	/* Typical BluePill: 8MHz HSE -> 72MHz SYSCLK. */
-	oscillator_config.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-	oscillator_config.HSEState = RCC_HSE_ON;
-	oscillator_config.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+	/*
+	 * HSI 8MHz / 2 * 16 -> 64MHz SYSCLK (max reachable without HSE).
+	 * The board's HSE crystal (Y2) does not start (HSERDY never set), so HSE is not used.
+	 */
+	oscillator_config.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+	oscillator_config.HSIState = RCC_HSI_ON;
+	oscillator_config.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
 	oscillator_config.PLL.PLLState = RCC_PLL_ON;
-	oscillator_config.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-	oscillator_config.PLL.PLLMUL = RCC_PLL_MUL9;
+	oscillator_config.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
+	oscillator_config.PLL.PLLMUL = RCC_PLL_MUL16;
 	if (HAL_RCC_OscConfig(&oscillator_config) != HAL_OK)
 	{
 		while (1)

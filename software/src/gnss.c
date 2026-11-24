@@ -69,6 +69,7 @@ static void ingest_line(uint8_t module_index, const char *line) {
 		m->nmea_checksum_errors++;
 		return;
 	}
+	m->last_rx_tick = HAL_GetTick();
 
 	NmeaGga gga = {0};
 	if (Nmea_ParseGga(line, &gga)) {
