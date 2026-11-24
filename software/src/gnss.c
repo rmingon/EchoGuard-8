@@ -80,6 +80,7 @@ static void ingest_line(uint8_t module_index, const char *line) {
 		m->lat_e7 = gga.lat_e7;
 		m->lon_e7 = gga.lon_e7;
 		m->alt_cm = gga.alt_cm;
+		m->fix_time_ms = gga.time_ms_of_day;
 		m->last_fix_tick = HAL_GetTick();
 		return;
 	}
@@ -92,6 +93,7 @@ static void ingest_line(uint8_t module_index, const char *line) {
 			m->lon_e7 = rmc.lon_e7;
 			m->speed_centi_ms = rmc.speed_centi_ms;
 			m->course_centi_deg = rmc.course_centi_deg;
+			m->fix_time_ms = rmc.time_ms_of_day;
 			m->last_fix_tick = HAL_GetTick();
 		}
 		return;

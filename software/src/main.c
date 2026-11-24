@@ -126,7 +126,17 @@ static void FusionPrintTask(void *argument)
 			PrintCoordE7("lat", r.lat_e7);
 			printf(" ");
 			PrintCoordE7("lon", r.lon_e7);
-			printf(" alt=%.2fm tick=%lu\r\n", (double)r.alt_cm / 100.0, (unsigned long)r.last_update_tick);
+			/* newlib-nano printf has no %f: print centimetres as metres with integers. */
+			int32_t alt_abs = (r.alt_cm < 0) ? -r.alt_cm : r.alt_cm;
+			uint32_t t = r.epoch_time_ms;
+			printf(" alt=%s%ld.%02ldm utc=%02lu:%02lu:%02lu.%03lu\r\n",
+			       (r.alt_cm < 0) ? "-" : "",
+			       (long)(alt_abs / 100),
+			       (long)(alt_abs % 100),
+			       (unsigned long)(t / 3600000u),
+			       (unsigned long)((t / 60000u) % 60u),
+			       (unsigned long)((t / 1000u) % 60u),
+			       (unsigned long)(t % 1000u));
 		}
 		else
 		{

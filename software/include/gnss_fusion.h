@@ -29,6 +29,7 @@ typedef struct {
 	uint16_t avg_hdop_centi;
 
 	uint32_t last_update_tick;
+	uint32_t epoch_time_ms; /* UTC ms of day of the fused GNSS epoch. */
 } GnssFusionResult;
 
 void GnssFusion_Init(void);

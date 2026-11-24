@@ -29,6 +29,7 @@ typedef struct {
 	uint16_t course_centi_deg;
 
 	uint32_t last_fix_tick;
+	uint32_t fix_time_ms; /* UTC ms of day of the lat/lon above (GNSS epoch). */
 	uint32_t last_rx_tick; /* Last NMEA sentence with a valid checksum (0 = never). */
 
 	uint32_t nmea_sentences;

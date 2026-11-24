@@ -17,6 +17,7 @@ import time
 
 DEFAULT_ELF = ".pio/build/stm32f103c8_freertos/firmware.elf"
 NM = os.path.expanduser("~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm")
+SENTINEL_ADDR = 0x08000000  # start of flash: always readable, never inside RTT RAM
 MEM_LINE = re.compile(r"^([0-9A-F]{8}) = ((?:[0-9A-F]{2} ?)+)")
 
 
@@ -47,20 +48,44 @@ class JLink:
         self.proc.stdin.write(cmd + "\n")
         self.proc.stdin.flush()
 
-    def read_mem(self, addr, length):
-        self.send(f"mem8 0x{addr:08X} {length}")
-        data = bytearray()
-        while len(data) < length:
+    def command(self, cmd):
+        """Run a command and return its output lines.
+
+        JLinkExe gives no end-of-output marker (and mem8 may print more bytes than asked), so
+        a sentinel read of a fixed flash word is sent after it to know where the output ends.
+        """
+        self.send(cmd)
+        self.send(f"mem32 0x{SENTINEL_ADDR:08X} 1")
+        lines = []
+        while True:
             line = self.proc.stdout.readline()
             if not line:
                 sys.exit("JLinkExe exited")
-            m = MEM_LINE.match(line.strip())
-            if m:
-                data += bytes.fromhex(m.group(2).replace(" ", ""))
-        return bytes(data[:length])
+            line = line.strip()
+            if line.startswith(f"{SENTINEL_ADDR:08X} = "):
+                return lines
+            lines.append(line)
+
+    def read_mem(self, addr, length):
+        data = bytearray(length)
+        got = 0
+        for line in self.command(f"mem8 0x{addr:08X} {length}"):
+            m = MEM_LINE.match(line)
+            if not m:
+                continue
+            line_addr = int(m.group(1), 16)
+            chunk = bytes.fromhex(m.group(2).replace(" ", ""))
+            for i, b in enumerate(chunk):
+                off = line_addr - addr + i
+                if 0 <= off < length:
+                    data[off] = b
+                    got += 1
+        if got < length:
+            raise IOError(f"short read at 0x{addr:08X}: {got}/{length}")
+        return bytes(data)
 
     def write_u32(self, addr, value):
-        self.send(f"w4 0x{addr:08X} 0x{value:08X}")
+        self.command(f"w4 0x{addr:08X} 0x{value:08X}")
 
     def close(self):
         try:
@@ -87,7 +112,11 @@ def main():
     deadline = time.monotonic() + args.seconds if args.seconds > 0 else None
     try:
         while deadline is None or time.monotonic() < deadline:
-            desc = jl.read_mem(up, 24)
+            try:
+                desc = jl.read_mem(up, 24)
+            except IOError:
+                time.sleep(0.2)  # target busy / resetting
+                continue
             buf, size, wr, rd = u32(desc, 4), u32(desc, 8), u32(desc, 12), u32(desc, 16)
             if size == 0 or wr >= size or rd >= size:
                 time.sleep(0.2)  # firmware not initialised yet

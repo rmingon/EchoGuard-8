@@ -76,6 +76,59 @@ static void update_fault_score(uint8_t module_index, bool used, bool rejected, f
 	}
 }
 
+#define MS_PER_DAY 86400000
+/* Fixes whose UTC time differ by less than this are considered the same GNSS epoch. */
+#define EPOCH_TOLERANCE_MS 50
+
+/* a - b in ms, wrapped across UTC midnight into (-12h, +12h]. */
+static int32_t epoch_diff_ms(uint32_t a, uint32_t b) {
+	int32_t d = (int32_t)(a % MS_PER_DAY) - (int32_t)(b % MS_PER_DAY);
+	if (d > MS_PER_DAY / 2) {
+		d -= MS_PER_DAY;
+	} else if (d <= -(MS_PER_DAY / 2)) {
+		d += MS_PER_DAY;
+	}
+	return d;
+}
+
+static bool same_epoch(uint32_t a, uint32_t b) {
+	int32_t d = epoch_diff_ms(a, b);
+	return d >= -EPOCH_TOLERANCE_MS && d <= EPOCH_TOLERANCE_MS;
+}
+
+/*
+ * Keep only the candidates sharing one GNSS epoch, so positions measured at different
+ * instants (modules don't all report at the same moment) are never averaged together.
+ * The epoch reported by the most modules wins; ties go to the most recent one. Returns the
+ * new candidate count and the chosen epoch.
+ */
+static size_t select_epoch(const GnssModuleState **candidates, size_t count, uint32_t *out_epoch) {
+	uint32_t best_epoch = candidates[0]->fix_time_ms;
+	size_t best_count = 0;
+	for (size_t i = 0; i < count; i++) {
+		uint32_t e = candidates[i]->fix_time_ms;
+		size_t n = 0;
+		for (size_t j = 0; j < count; j++) {
+			if (same_epoch(e, candidates[j]->fix_time_ms)) {
+				n++;
+			}
+		}
+		if (n > best_count || (n == best_count && epoch_diff_ms(e, best_epoch) > 0)) {
+			best_count = n;
+			best_epoch = e;
+		}
+	}
+
+	size_t kept = 0;
+	for (size_t i = 0; i < count; i++) {
+		if (same_epoch(best_epoch, candidates[i]->fix_time_ms)) {
+			candidates[kept++] = candidates[i];
+		}
+	}
+	*out_epoch = best_epoch;
+	return kept;
+}
+
 static void compute_fusion(void) {
 	const GnssModuleState *modules = Gnss_GetModules();
 
@@ -107,6 +160,9 @@ static void compute_fusion(void) {
 		taskEXIT_CRITICAL();
 		return;
 	}
+
+	/* Modules left out here only lag one epoch behind: they are not penalised. */
+	candidate_count = select_epoch(candidates, candidate_count, &r.epoch_time_ms);
 
 	int32_t lat_buf[GNSS_MODULE_COUNT];
 	int32_t lon_buf[GNSS_MODULE_COUNT];
@@ -162,10 +218,16 @@ static void compute_fusion(void) {
 		return;
 	}
 
+	/*
+	 * Average the offsets from a reference (median lat/lon, first used altitude) rather than
+	 * the absolute values: a float has a 24-bit mantissa, so a raw lat_e7 (~4.6e8) would be
+	 * quantised to ~32e-7 deg (~0.36 m). Offsets stay small and exact in float.
+	 */
+	int32_t ref_alt_cm = used[0]->alt_cm;
 	float sum_w = 0.0f;
-	float lat_w = 0.0f;
-	float lon_w = 0.0f;
-	float alt_w = 0.0f;
+	float dlat_w = 0.0f;
+	float dlon_w = 0.0f;
+	float dalt_w = 0.0f;
 	uint32_t hdop_sum = 0;
 
 	float max_residual_m = 0.0f;
@@ -173,9 +235,9 @@ static void compute_fusion(void) {
 		const GnssModuleState *m = used[i];
 		float w = used_weights[i];
 		sum_w += w;
-		lat_w += w * (float)m->lat_e7;
-		lon_w += w * (float)m->lon_e7;
-		alt_w += w * (float)m->alt_cm;
+		dlat_w += w * (float)(m->lat_e7 - med_lat_e7);
+		dlon_w += w * (float)(m->lon_e7 - med_lon_e7);
+		dalt_w += w * (float)(m->alt_cm - ref_alt_cm);
 		hdop_sum += m->hdop_centi;
 		if (used_residual_m[i] > max_residual_m) {
 			max_residual_m = used_residual_m[i];
@@ -183,9 +245,9 @@ static void compute_fusion(void) {
 	}
 
 	r.has_fix = true;
-	r.lat_e7 = (int32_t)(lat_w / sum_w);
-	r.lon_e7 = (int32_t)(lon_w / sum_w);
-	r.alt_cm = (int32_t)(alt_w / sum_w);
+	r.lat_e7 = med_lat_e7 + (int32_t)lroundf(dlat_w / sum_w);
+	r.lon_e7 = med_lon_e7 + (int32_t)lroundf(dlon_w / sum_w);
+	r.alt_cm = ref_alt_cm + (int32_t)lroundf(dalt_w / sum_w);
 	r.used_modules = (uint8_t)used_count;
 	r.rejected_modules = (uint8_t)rejected_count;
 	r.max_residual_cm = clamp_u16((uint32_t)(max_residual_m * 100.0f));
