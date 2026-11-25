@@ -65,9 +65,84 @@ static const char *const kGnssBoardRef[GNSS_MODULE_COUNT] = {
 	"U1", "U4", "U6", "U8", "U10", "U12", "U14", "U16",
 };
 
+static void PrintDbhzX10(const char *name, uint16_t value_x10)
+{
+	printf("%s=%u.%u", name, (unsigned)(value_x10 / 10u), (unsigned)(value_x10 % 10u));
+}
+
+static const char *const kConstellationTag[GNSS_CONST_COUNT] = {"gps", "bds", "glo", "oth"};
+
+/* Ends the module line: " cn0 top4=.. avg=.. max=.. trk=tracked/in_view gps=../.. bds=../.." */
+static void PrintModuleCn0(const GnssModuleState *m, const GnssCn0Summary *s, uint32_t now)
+{
+	if (!s->valid)
+	{
+		printf(" cn0 n/a\r\n");
+		return;
+	}
+	printf(" cn0 ");
+	PrintDbhzX10("top4", s->top4_x10);
+	printf(" ");
+	PrintDbhzX10("avg", s->mean_x10);
+	printf(" max=%u trk=%u/%u", (unsigned)s->max_dbhz, (unsigned)s->tracked, (unsigned)s->in_view);
+	for (size_t c = 0; c < GNSS_CONST_COUNT; c++)
+	{
+		const GnssCn0Constellation *cc = &m->cn0[c];
+		if (cc->update_tick == 0 || (now - cc->update_tick) > GNSS_CN0_STALE_MS || cc->in_view == 0)
+		{
+			continue;
+		}
+		printf(" %s=%u/%u", kConstellationTag[c], (unsigned)cc->tracked, (unsigned)cc->in_view);
+	}
+	printf("\r\n");
+}
+
+/*
+ * One line for the whole array: mean of the per-module top4 C/N0, and the weakest/strongest module.
+ * Watch this line while switching drone subsystems on and off: a drop on every module at once is
+ * interference reaching all antennas, a drop on one module only is local (antenna, cable, routing).
+ */
+static void PrintArrayCn0(const GnssCn0Summary *summaries)
+{
+	uint32_t sum = 0;
+	unsigned count = 0;
+	uint8_t min_i = 0, max_i = 0;
+	for (uint8_t i = 0; i < GNSS_MODULE_COUNT; i++)
+	{
+		if (!summaries[i].valid)
+		{
+			continue;
+		}
+		if (count == 0 || summaries[i].top4_x10 < summaries[min_i].top4_x10)
+		{
+			min_i = i;
+		}
+		if (count == 0 || summaries[i].top4_x10 > summaries[max_i].top4_x10)
+		{
+			max_i = i;
+		}
+		sum += summaries[i].top4_x10;
+		count++;
+	}
+
+	if (count == 0)
+	{
+		printf("[cn0 array] no GSV data\r\n");
+		return;
+	}
+	printf("[cn0 array] modules=%u ", count);
+	PrintDbhzX10("top4", (uint16_t)(sum / count));
+	printf(" ");
+	PrintDbhzX10("min", summaries[min_i].top4_x10);
+	printf(" (#%u) ", (unsigned)(min_i + 1u));
+	PrintDbhzX10("max", summaries[max_i].top4_x10);
+	printf(" (#%u)\r\n", (unsigned)(max_i + 1u));
+}
+
 static void PrintModulesStatus(void)
 {
 	uint32_t now = HAL_GetTick();
+	GnssCn0Summary cn0[GNSS_MODULE_COUNT] = {0};
 	for (uint8_t i = 1; i <= GNSS_MODULE_COUNT; i++)
 	{
 		const GnssModuleState *m = Gnss_GetModule(i);
@@ -98,13 +173,15 @@ static void PrintModulesStatus(void)
 			PrintCoordE7("lat", m->lat_e7);
 			printf(" ");
 			PrintCoordE7("lon", m->lon_e7);
-			printf("\r\n");
 		}
 		else
 		{
-			printf("no fix sats=%u\r\n", (unsigned)m->satellites);
+			printf("no fix sats=%u", (unsigned)m->satellites);
 		}
+		Gnss_GetCn0Summary(m, now, &cn0[i - 1]);
+		PrintModuleCn0(m, &cn0[i - 1], now);
 	}
+	PrintArrayCn0(cn0);
 }
 
 static void FusionPrintTask(void *argument)

@@ -13,6 +13,38 @@ extern "C" {
 #define GNSS_MODULE_COUNT 8u
 #endif
 
+typedef enum {
+	GNSS_CONST_GPS = 0,
+	GNSS_CONST_BDS,
+	GNSS_CONST_GLO,
+	GNSS_CONST_OTHER,
+	GNSS_CONST_COUNT,
+} GnssConstellation;
+
+#define GNSS_CN0_TOP_COUNT 4u
+
+/* A constellation whose last GSV cycle is older than this is ignored (lost or disabled). */
+#define GNSS_CN0_STALE_MS 3000u
+
+/* Signal strength of one constellation, taken from its last complete GSV cycle. */
+typedef struct {
+	uint8_t in_view;
+	uint8_t tracked; /* Satellites with a C/N0 value. */
+	uint16_t cn0_sum; /* dB-Hz, over tracked satellites. */
+	uint8_t cn0_top[GNSS_CN0_TOP_COUNT]; /* Strongest C/N0, descending, 0 = unused. */
+	uint32_t update_tick; /* HAL tick of the last complete cycle (0 = never). */
+} GnssCn0Constellation;
+
+/* C/N0 of one module, merged over its constellations with fresh data. */
+typedef struct {
+	bool valid; /* At least one constellation reported a complete GSV cycle recently. */
+	uint8_t in_view;
+	uint8_t tracked;
+	uint8_t max_dbhz;
+	uint16_t mean_x10;  /* Mean C/N0 of tracked satellites, dB-Hz x10. */
+	uint16_t top4_x10;  /* Mean of the 4 strongest satellites, dB-Hz x10 (jamming indicator). */
+} GnssCn0Summary;
+
 typedef struct {
 	uint8_t module_index; /* 1..8 */
 
@@ -34,12 +66,17 @@ typedef struct {
 
 	uint32_t nmea_sentences;
 	uint32_t nmea_checksum_errors;
+
+	GnssCn0Constellation cn0[GNSS_CONST_COUNT];
 } GnssModuleState;
 
 void Gnss_Init(uint32_t baudrate);
 void Gnss_Task(void *argument);
 const GnssModuleState *Gnss_GetModules(void);
 const GnssModuleState *Gnss_GetModule(uint8_t module_index);
+
+/* Merge the constellations updated within GNSS_CN0_STALE_MS. Returns out->valid. */
+bool Gnss_GetCn0Summary(const GnssModuleState *m, uint32_t now, GnssCn0Summary *out);
 
 #ifdef __cplusplus
 }

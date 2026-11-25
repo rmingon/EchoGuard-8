@@ -14,8 +14,16 @@ typedef struct {
 	uint16_t used;
 } LineBuffer;
 
+/* GSV cycle being assembled for one constellation of one module. */
+typedef struct {
+	uint8_t next_msg; /* Page expected next, 0 = waiting for page 1. */
+	uint8_t total_msgs;
+	GnssCn0Constellation work;
+} GsvAccumulator;
+
 static GnssModuleState modules[GNSS_MODULE_COUNT];
 static LineBuffer line_buffers[GNSS_MODULE_COUNT];
+static GsvAccumulator gsv_acc[GNSS_MODULE_COUNT][GNSS_CONST_COUNT];
 
 static GnssModuleState *module_by_index(uint8_t module_index) {
 	if (module_index < 1 || module_index > GNSS_MODULE_COUNT) {
@@ -51,11 +59,109 @@ void Gnss_Init(uint32_t baudrate) {
 			memset(lb, 0, sizeof(*lb));
 		}
 	}
+	memset(gsv_acc, 0, sizeof(gsv_acc));
 
 	GnssUart_GpioInit();
 	GnssUart_HardwareUartsInit(baudrate);
 	GnssUart_SoftUartInit(baudrate);
 	GnssUart_StartHardwareRx();
+}
+
+static GnssConstellation constellation_from_talker(const char talker[2]) {
+	if (talker[0] == 'G' && talker[1] == 'P') {
+		return GNSS_CONST_GPS;
+	}
+	if ((talker[0] == 'B' && talker[1] == 'D') || (talker[0] == 'G' && talker[1] == 'B')) {
+		return GNSS_CONST_BDS;
+	}
+	if (talker[0] == 'G' && talker[1] == 'L') {
+		return GNSS_CONST_GLO;
+	}
+	return GNSS_CONST_OTHER;
+}
+
+/* Insert into a descending array of size GNSS_CN0_TOP_COUNT, dropping the weakest. */
+static void top_insert(uint8_t *top, uint8_t value) {
+	for (size_t i = 0; i < GNSS_CN0_TOP_COUNT; i++) {
+		if (value > top[i]) {
+			for (size_t j = GNSS_CN0_TOP_COUNT - 1u; j > i; j--) {
+				top[j] = top[j - 1u];
+			}
+			top[i] = value;
+			return;
+		}
+	}
+}
+
+static void ingest_gsv(uint8_t module_index, GnssModuleState *m, const NmeaGsv *gsv) {
+	GnssConstellation c = constellation_from_talker(gsv->talker);
+	GsvAccumulator *acc = &gsv_acc[module_index - 1][c];
+
+	if (gsv->msg_num == 1) {
+		memset(&acc->work, 0, sizeof(acc->work));
+		acc->total_msgs = gsv->total_msgs;
+		acc->next_msg = 1;
+	}
+	/* A page lost to a checksum error would bias the cycle: drop it and wait for the next one. */
+	if (acc->next_msg != gsv->msg_num || acc->total_msgs != gsv->total_msgs) {
+		acc->next_msg = 0;
+		return;
+	}
+
+	acc->work.in_view = gsv->sats_in_view;
+	for (uint8_t i = 0; i < gsv->sat_count; i++) {
+		uint8_t cn0 = gsv->sats[i].cn0_dbhz;
+		if (cn0 == 0) {
+			continue;
+		}
+		acc->work.tracked++;
+		acc->work.cn0_sum = (uint16_t)(acc->work.cn0_sum + cn0);
+		top_insert(acc->work.cn0_top, cn0);
+	}
+
+	if (gsv->msg_num == gsv->total_msgs) {
+		acc->work.update_tick = HAL_GetTick();
+		m->cn0[c] = acc->work;
+		acc->next_msg = 0;
+	} else {
+		acc->next_msg++;
+	}
+}
+
+bool Gnss_GetCn0Summary(const GnssModuleState *m, uint32_t now, GnssCn0Summary *out) {
+	memset(out, 0, sizeof(*out));
+	if (m == NULL) {
+		return false;
+	}
+
+	uint8_t top[GNSS_CN0_TOP_COUNT] = {0};
+	uint32_t sum = 0;
+	for (size_t c = 0; c < GNSS_CONST_COUNT; c++) {
+		const GnssCn0Constellation *cc = &m->cn0[c];
+		if (cc->update_tick == 0 || (now - cc->update_tick) > GNSS_CN0_STALE_MS) {
+			continue;
+		}
+		out->valid = true;
+		out->in_view = (uint8_t)(out->in_view + cc->in_view);
+		out->tracked = (uint8_t)(out->tracked + cc->tracked);
+		sum += cc->cn0_sum;
+		for (size_t i = 0; i < GNSS_CN0_TOP_COUNT && cc->cn0_top[i] != 0; i++) {
+			top_insert(top, cc->cn0_top[i]);
+		}
+	}
+
+	if (out->tracked > 0) {
+		out->mean_x10 = (uint16_t)((sum * 10u) / out->tracked);
+		out->max_dbhz = top[0];
+		uint32_t top_sum = 0;
+		uint32_t top_n = 0;
+		for (size_t i = 0; i < GNSS_CN0_TOP_COUNT && top[i] != 0; i++) {
+			top_sum += top[i];
+			top_n++;
+		}
+		out->top4_x10 = (uint16_t)((top_sum * 10u) / top_n);
+	}
+	return out->valid;
 }
 
 static void ingest_line(uint8_t module_index, const char *line) {
@@ -96,6 +202,12 @@ static void ingest_line(uint8_t module_index, const char *line) {
 			m->fix_time_ms = rmc.time_ms_of_day;
 			m->last_fix_tick = HAL_GetTick();
 		}
+		return;
+	}
+
+	NmeaGsv gsv = {0};
+	if (Nmea_ParseGsv(line, &gsv)) {
+		ingest_gsv(module_index, m, &gsv);
 		return;
 	}
 }

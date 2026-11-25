@@ -328,3 +328,86 @@ bool Nmea_ParseRmc(const char *sentence, NmeaRmc *out) {
 	*out = parsed;
 	return true;
 }
+
+/*
+ * $GPGSV,3,1,12,01,40,083,46,02,17,308,41,12,07,344,,14,22,228,45,1*6A
+ *        |  |  |  |  |  |   |  (x1..4 satellites)           | NMEA 4.1 signal ID (optional)
+ *        |  |  |  prn elev az snr
+ *        |  |  satellites in view
+ *        |  message number
+ *        total messages
+ */
+bool Nmea_ParseGsv(const char *sentence, NmeaGsv *out) {
+	if (sentence == NULL || out == NULL) {
+		return false;
+	}
+	if (!Nmea_ChecksumOk(sentence)) {
+		return false;
+	}
+
+	char tmp[96];
+	size_t len = strcspn(sentence, "\r\n");
+	if (len >= sizeof(tmp)) {
+		return false;
+	}
+	memcpy(tmp, sentence, len);
+	tmp[len] = '\0';
+	if (tmp[0] != '$') {
+		return false;
+	}
+
+	/* type + 3 header fields + 4 x 4 satellite fields + signal ID + checksum */
+	const char *tokens[24] = {0};
+	size_t token_count = tokenize_in_place(tmp + 1, tokens, 24);
+	if (token_count < 5) { /* type, 3 header fields, checksum */
+		return false;
+	}
+	if (strlen(tokens[0]) != 5 || !has_type(tokens[0], "GSV")) {
+		return false;
+	}
+
+	NmeaGsv parsed = {0};
+	parsed.talker[0] = tokens[0][0];
+	parsed.talker[1] = tokens[0][1];
+
+	uint32_t total = 0, num = 0, in_view = 0;
+	if (!parse_u32(tokens[1], &total) || !parse_u32(tokens[2], &num) || !parse_u32(tokens[3], &in_view)) {
+		return false;
+	}
+	if (total == 0 || total > 9u || num == 0 || num > total) {
+		return false;
+	}
+	parsed.total_msgs = (uint8_t)total;
+	parsed.msg_num = (uint8_t)num;
+	parsed.sats_in_view = (uint8_t)(in_view > 255u ? 255u : in_view);
+
+	/* The last token is the checksum; an optional signal ID makes the remainder non-multiple of 4. */
+	size_t data_tokens = token_count - 1u;
+	size_t groups = (data_tokens - 4u) / 4u;
+	if (groups > NMEA_GSV_SATS_PER_MSG) {
+		groups = NMEA_GSV_SATS_PER_MSG;
+	}
+
+	for (size_t g = 0; g < groups; g++) {
+		const char *prn_s = tokens[4u + (g * 4u)];
+		const char *elev_s = tokens[5u + (g * 4u)];
+		const char *snr_s = tokens[7u + (g * 4u)];
+
+		uint32_t prn = 0;
+		if (!parse_u32(prn_s, &prn)) {
+			continue; /* Empty slot (padding on the last page). */
+		}
+		uint32_t elev = 0;
+		uint32_t snr = 0;
+		(void)parse_u32(elev_s, &elev);
+		(void)parse_u32(snr_s, &snr);
+
+		NmeaGsvSat *sat = &parsed.sats[parsed.sat_count++];
+		sat->prn = (uint8_t)(prn > 255u ? 255u : prn);
+		sat->elevation_deg = (uint8_t)(elev > 90u ? 90u : elev);
+		sat->cn0_dbhz = (uint8_t)(snr > 99u ? 99u : snr);
+	}
+
+	*out = parsed;
+	return true;
+}
