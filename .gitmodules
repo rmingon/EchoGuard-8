@@ -1,0 +1,3 @@
+[submodule "arduino/EchoGuard8"]
+	path = arduino/EchoGuard8
+	url = https://github.com/rmingon/EchoGuard8-Library.git

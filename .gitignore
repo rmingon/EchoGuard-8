@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# KiCad: lock files, automatic backups, local history, caches
+~*.lck
+*.lck
+*-backups/
+.history/
+_autosave-*
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*-bak
+fp-info-cache
+
+# PlatformIO and editors (software/ has its own .gitignore as well)
+.pio/
+.vscode/

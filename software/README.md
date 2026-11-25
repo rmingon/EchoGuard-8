@@ -15,8 +15,8 @@ The hardware connects 8× ATGM336H modules using nets `TX_1..TX_8` / `RX_1..RX_8
 - GNSS #7: TX=`PA4` (net `TX_7`), RX=`PA5` (net `RX_7`)
 - GNSS #8: TX=`PA6` (net `TX_8`), RX=`PA7` (net `RX_8`)
 
-Only GNSS modules #1..#3 are on hardware USART pin pairs; the rest need a software UART (or other method) if all
-8 modules must be received concurrently.
+GNSS modules #1..#3 are on hardware USART pin pairs. Modules #4..#8 are received by a software UART: `TIM2`
+samples their RX pins at 8× the baud rate (9600 baud).
 
 ## SPI Fused Output (J11)
 
@@ -46,6 +46,7 @@ Packet (little-endian, `SPI_FUSION_PACKET_SIZE == 32`):
 - Install PlatformIO CLI (or use the VS Code PlatformIO extension).
 - From `software/`:
   - Build: `pio run`
-  - Upload (ST-Link): `pio run -t upload`
+  - Upload (J-Link, SWD): `pio run -t upload`
+  - Debug console (SEGGER RTT): `python3 tools/rtt_read.py`
 
-`FreeRTOS-Kernel` is pulled via `lib_deps` (requires network access on first build).
+`FreeRTOS-Kernel` is vendored under `lib/FreeRTOS-Kernel` (Cortex-M3 port), so the build needs no extra download.
