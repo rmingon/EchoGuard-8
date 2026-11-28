@@ -1,6 +1,7 @@
 #include "gnss.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
@@ -47,6 +48,74 @@ const GnssModuleState *Gnss_GetModule(uint8_t module_index) {
 	return module_by_index(module_index);
 }
 
+/*
+ * MOD_RST (PA0) drives the nRESET pin of all 8 modules. Open-drain with the external 10k
+ * pull-up (R33): released, the line idles high, and while the STM32 itself is in reset or
+ * being flashed (pin floating) the modules keep running.
+ */
+#define GNSS_RESET_PORT GPIOA
+#define GNSS_RESET_PIN GPIO_PIN_0
+
+static void reset_pin_init(void) {
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	HAL_GPIO_WritePin(GNSS_RESET_PORT, GNSS_RESET_PIN, GPIO_PIN_SET);
+
+	GPIO_InitTypeDef gpio = {0};
+	gpio.Pin = GNSS_RESET_PIN;
+	gpio.Mode = GPIO_MODE_OUTPUT_OD;
+	gpio.Pull = GPIO_NOPULL;
+	gpio.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GNSS_RESET_PORT, &gpio);
+}
+
+static void delay_ms(uint32_t ms) {
+	if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+		vTaskDelay(pdMS_TO_TICKS(ms));
+	} else {
+		HAL_Delay(ms);
+	}
+}
+
+void Gnss_ResetModules(void) {
+	HAL_GPIO_WritePin(GNSS_RESET_PORT, GNSS_RESET_PIN, GPIO_PIN_RESET);
+	delay_ms(GNSS_RESET_PULSE_MS);
+	HAL_GPIO_WritePin(GNSS_RESET_PORT, GNSS_RESET_PIN, GPIO_PIN_SET);
+}
+
+static volatile bool reset_requested;
+
+void Gnss_RequestReset(void) {
+	reset_requested = true;
+}
+
+bool Gnss_SendCommand(uint8_t module_index, const char *body) {
+	if (body == NULL) {
+		return false;
+	}
+
+	uint8_t checksum = 0;
+	for (const char *c = body; *c != '\0'; c++) {
+		checksum ^= (uint8_t)*c;
+	}
+
+	char frame[GNSS_UART_TX_SIZE];
+	int n = snprintf(frame, sizeof(frame), "$%s*%02X\r\n", body, (unsigned)checksum);
+	if (n <= 0 || (size_t)n >= sizeof(frame)) {
+		return false;
+	}
+	return GnssUart_Write(module_index, (const uint8_t *)frame, (size_t)n, GNSS_COMMAND_TIMEOUT_MS);
+}
+
+uint8_t Gnss_SendCommandAll(const char *body) {
+	uint8_t ok = 0;
+	for (uint8_t i = 1; i <= GNSS_MODULE_COUNT; i++) {
+		if (Gnss_SendCommand(i, body)) {
+			ok++;
+		}
+	}
+	return ok;
+}
+
 void Gnss_Init(uint32_t baudrate) {
 	for (uint8_t i = 1; i <= GNSS_MODULE_COUNT; i++) {
 		GnssModuleState *m = module_by_index(i);
@@ -61,6 +130,7 @@ void Gnss_Init(uint32_t baudrate) {
 	}
 	memset(gsv_acc, 0, sizeof(gsv_acc));
 
+	reset_pin_init();
 	GnssUart_GpioInit();
 	GnssUart_HardwareUartsInit(baudrate);
 	GnssUart_SoftUartInit(baudrate);
@@ -245,6 +315,10 @@ void Gnss_Task(void *argument) {
 	uint8_t scratch[64];
 
 	while (1) {
+		if (reset_requested) {
+			reset_requested = false;
+			Gnss_ResetModules();
+		}
 		for (uint8_t module_index = 1; module_index <= GNSS_MODULE_COUNT; module_index++) {
 			size_t n = GnssUart_ReadBytes(module_index, scratch, sizeof(scratch));
 			if (n > 0) {

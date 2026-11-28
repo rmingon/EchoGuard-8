@@ -8,6 +8,7 @@
 #include "gnss.h"
 #include "gnss_fusion.h"
 #include "gnss_uart.h"
+#include "pps.h"
 #include "spi_fusion.h"
 
 void Rtt_Init(void);
@@ -184,12 +185,34 @@ static void PrintModulesStatus(void)
 	PrintArrayCn0(cn0);
 }
 
+/* Local clock error comes out for free: the timer counts HSI microseconds between UTC seconds. */
+static void PrintPps(void)
+{
+	PpsInfo p = {0};
+	if (!Pps_GetLast(&p))
+	{
+		printf("[pps #6] none (edges=%lu)\r\n", (unsigned long)p.count);
+		return;
+	}
+	printf("[pps #6] edges=%lu age=%lums",
+	       (unsigned long)p.count,
+	       (unsigned long)(HAL_GetTick() - p.last_tick));
+	if (p.period_us != 0)
+	{
+		printf(" period=%luus clk=%+ldppm",
+		       (unsigned long)p.period_us,
+		       (long)((int32_t)p.period_us - 1000000));
+	}
+	printf("\r\n");
+}
+
 static void FusionPrintTask(void *argument)
 {
 	(void)argument;
 	while (1)
 	{
 		PrintModulesStatus();
+		PrintPps();
 
 		GnssFusionResult r = {0};
 		if (GnssFusion_GetResult(&r) && r.has_fix)
@@ -274,6 +297,11 @@ void EXTI1_IRQHandler(void)
 
 void TIM2_IRQHandler(void)
 {
+	Pps_TimIrqHandler();
+}
+
+void TIM3_IRQHandler(void)
+{
 	GnssUart_TimIrqHandler();
 }
 
@@ -285,6 +313,7 @@ int main(void)
 	MX_GPIO_Init();
 
 	Gnss_Init(9600);
+	Pps_Init();
 	GnssFusion_Init();
 	SpiFusion_Init();
 

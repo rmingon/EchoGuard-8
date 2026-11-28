@@ -6,6 +6,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "gnss.h"
 #include "gnss_fusion.h"
 #include "stm32f1xx_hal.h"
 
@@ -14,6 +15,10 @@
 static volatile uint8_t tx_buf[SPI_FUSION_PACKET_SIZE];
 static volatile uint8_t tx_index;
 static volatile uint8_t selected;
+
+static volatile uint8_t rx_buf[SPI_FUSION_PACKET_SIZE];
+static volatile uint8_t rx_index;
+static volatile uint8_t commands_accepted;
 
 static uint16_t crc16_ccitt(const uint8_t *data, size_t len)
 {
@@ -72,9 +77,58 @@ static void build_packet_from_isr(uint8_t out[SPI_FUSION_PACKET_SIZE])
 	out[25] = r.used_modules;
 	out[26] = r.rejected_modules;
 	out[27] = r.has_fix ? 1u : 0u;
+	out[28] = commands_accepted;
 
 	uint16_t crc = crc16_ccitt(out, SPI_FUSION_PACKET_SIZE - 2u);
 	put_u16_le(&out[SPI_FUSION_PACKET_SIZE - 2u], crc);
+}
+
+static uint16_t get_u16_le(const uint8_t *src)
+{
+	return (uint16_t)(src[0] | ((uint16_t)src[1] << 8));
+}
+
+static uint32_t get_u32_le(const uint8_t *src)
+{
+	return (uint32_t)src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16) |
+	       ((uint32_t)src[3] << 24);
+}
+
+static void store_rx_byte(uint8_t byte)
+{
+	if (rx_index < SPI_FUSION_PACKET_SIZE)
+	{
+		rx_buf[rx_index++] = byte;
+	}
+}
+
+/* Called from the SS rising edge: run the command received during the transaction, if any. */
+static void handle_command_from_isr(void)
+{
+	if (rx_index < SPI_COMMAND_SIZE)
+	{
+		return;
+	}
+	uint8_t frame[SPI_COMMAND_SIZE];
+	for (size_t i = 0; i < SPI_COMMAND_SIZE; i++)
+	{
+		frame[i] = rx_buf[i];
+	}
+	if (get_u32_le(&frame[0]) != SPI_COMMAND_MAGIC ||
+	    crc16_ccitt(frame, SPI_COMMAND_SIZE - 2u) != get_u16_le(&frame[SPI_COMMAND_SIZE - 2u]))
+	{
+		return;
+	}
+
+	switch (frame[4])
+	{
+	case SPI_COMMAND_RESET_MODULES:
+		Gnss_RequestReset();
+		break;
+	default:
+		return; /* Unknown command: not acknowledged. */
+	}
+	commands_accepted++;
 }
 
 void SpiFusion_Init(void)
@@ -141,7 +195,11 @@ void SpiFusion_SpiIrqHandler(void)
 
 	if ((sr & SPI_SR_RXNE) != 0)
 	{
-		(void)SPI1->DR;
+		uint8_t byte = (uint8_t)SPI1->DR;
+		if (selected != 0)
+		{
+			store_rx_byte(byte);
+		}
 	}
 
 	if ((sr & SPI_SR_TXE) != 0)
@@ -182,6 +240,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin)
 		(void)SPI1->SR;
 		SPI1->CR1 &= ~SPI_CR1_SSI; /* internal NSS low => selected */
 		tx_index = 0;
+		rx_index = 0;
 		memcpy((void *)tx_buf, packet, sizeof(packet));
 		if ((SPI1->SR & SPI_SR_TXE) != 0)
 		{
@@ -192,6 +251,15 @@ void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin)
 	else
 	{
 		SPI1->CR2 &= ~(SPI_CR2_RXNEIE | SPI_CR2_TXEIE);
+		/* EXTI1 outranks SPI1 at equal priority: the last byte may still be waiting. */
+		if (selected != 0 && (SPI1->SR & SPI_SR_RXNE) != 0)
+		{
+			store_rx_byte((uint8_t)SPI1->DR);
+		}
+		if (selected != 0)
+		{
+			handle_command_from_isr();
+		}
 		selected = 0;
 		tx_index = 0;
 		SPI1->CR1 |= SPI_CR1_SSI; /* internal NSS high => not selected */

@@ -70,7 +70,31 @@ typedef struct {
 	GnssCn0Constellation cn0[GNSS_CONST_COUNT];
 } GnssModuleState;
 
+/* Low time of the shared MOD_RST pulse (the datasheet gives no minimum). */
+#define GNSS_RESET_PULSE_MS 10u
+
+/* Upper bound for one command; a 40-byte frame takes ~42 ms at 9600 baud. */
+#define GNSS_COMMAND_TIMEOUT_MS 200u
+
 void Gnss_Init(uint32_t baudrate);
+
+/*
+ * Pulse the shared nRESET line of all 8 modules. Blocks for GNSS_RESET_PULSE_MS; the modules
+ * then reboot and print their $GPTXT banner before sending NMEA again.
+ */
+void Gnss_ResetModules(void);
+
+/* ISR-safe: ask Gnss_Task to run Gnss_ResetModules() on its next pass (within ~5 ms). */
+void Gnss_RequestReset(void);
+
+/*
+ * Send one NMEA/CASIC command to a module (1..8). body is the text between '$' and '*'
+ * (e.g. "PCAS10,0" for a hot start); the checksum and CRLF are added. Blocks until sent.
+ */
+bool Gnss_SendCommand(uint8_t module_index, const char *body);
+
+/* Same command to every module, one after the other. Returns how many were sent. */
+uint8_t Gnss_SendCommandAll(const char *body);
 void Gnss_Task(void *argument);
 const GnssModuleState *Gnss_GetModules(void);
 const GnssModuleState *Gnss_GetModule(uint8_t module_index);

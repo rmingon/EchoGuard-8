@@ -15,8 +15,18 @@ The hardware connects 8× ATGM336H modules using nets `TX_1..TX_8` / `RX_1..RX_8
 - GNSS #7: TX=`PA4` (net `TX_7`), RX=`PA5` (net `RX_7`)
 - GNSS #8: TX=`PA6` (net `TX_8`), RX=`PA7` (net `RX_8`)
 
-GNSS modules #1..#3 are on hardware USART pin pairs. Modules #4..#8 are received by a software UART: `TIM2`
-samples their RX pins at 8× the baud rate (9600 baud).
+GNSS modules #1..#3 are on hardware USART pin pairs. Modules #4..#8 use a software UART: the `TIM3` update
+tick runs at 8× the baud rate (9600 baud), samples their RX pins and clocks out their TX pins.
+
+Commands are sent with `Gnss_SendCommand(module, "PCAS10,0")` (checksum and CRLF added), or
+`Gnss_SendCommandAll()` for every module.
+
+## Module Reset and PPS
+
+- `MOD_RST` (`PA0`, open-drain, 10k pull-up R33): shared nRESET of the 8 modules. `Gnss_ResetModules()`
+  pulls it low for 10 ms.
+- `PPS` (`PA1`): 1PPS of GNSS #6 (U12), captured on the rising edge by `TIM2_CH2` at 1 MHz
+  (`include/pps.h`). The RTT console prints the edge count and the measured local clock error.
 
 ## SPI Fused Output (J11)
 
@@ -39,7 +49,11 @@ Packet (little-endian, `SPI_FUSION_PACKET_SIZE == 32`):
 - `i32 lat_e7`, `i32 lon_e7`, `i32 alt_cm`
 - `u16 avg_hdop_centi`, `u16 max_residual_cm`
 - `u8 status`, `u8 used_modules`, `u8 rejected_modules`, `u8 has_fix`
+- `u8 commands_accepted`, `u8 reserved`
 - `u16 crc16_ccitt` (over first 30 bytes)
+
+Commands from the host arrive on `MOSI` in the first 8 bytes of a read (`u32 'EGC1'`, `u8 command`,
+`u8 argument`, `u16 crc16`); `0x01` resets the GNSS modules. See `include/spi_fusion.h`.
 
 ## Build / Upload
 

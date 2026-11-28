@@ -73,7 +73,7 @@ flowchart LR
     end
 
     G1 -- "USART 1/2/3" --> P["NMEA parser<br>GGA · RMC · GSV"]
-    G2 -- "software UART<br>TIM2, 8× oversampling" --> P
+    G2 -- "software UART<br>TIM3, 8× oversampling" --> P
 
     P --> E["Epoch alignment<br>same UTC instant"]
     E --> M["Median reference<br>+ outlier gate"]
@@ -183,7 +183,8 @@ The full datasheet is included: [002176_ATGM336H.pdf](./002176_ATGM336H.pdf).
 ## SPI interface
 
 EchoGuard-8 is an **SPI slave** (mode 0, MSB first). Each time the host asserts `SS`, the
-board streams one 32-byte little-endian packet on `MISO`.
+board streams one 32-byte little-endian packet on `MISO`. The host can send a command on
+`MOSI` in the same transaction, see below.
 
 **Connector `J11` (JST-SH, 6 pins)**
 
@@ -206,8 +207,22 @@ board streams one 32-byte little-endian packet on `MISO`.
 | 25 | `u8` | `used_modules` | Receivers used in this solution |
 | 26 | `u8` | `rejected_modules` | Receivers rejected as outliers |
 | 27 | `u8` | `has_fix` | 1 when the position is valid |
-| 28 | `u16` | reserved | Zero |
+| 28 | `u8` | `commands_accepted` | Commands accepted since boot, mod 256 |
+| 29 | `u8` | reserved | Zero |
 | 30 | `u16` | `crc16` | CRC-16/CCITT-FALSE over bytes 0..29 |
+
+**Commands**
+
+The host sends a command in the first 8 bytes it clocks out on `MOSI` while reading a packet.
+Anything else (all zeros for a plain read) is ignored. The command runs when `SS` rises, and
+`commands_accepted` in the next packet goes up by one to acknowledge it.
+
+| Offset | Type | Field | Description |
+| :---: | :---: | --- | --- |
+| 0 | `u32` | `magic` | `0x31434745`, ASCII `EGC1` |
+| 4 | `u8` | `command` | `0x01`: reset the 8 GNSS receivers (shared nRESET, 10 ms pulse) |
+| 5 | `u8` | `argument` | Zero |
+| 6 | `u16` | `crc16` | CRC-16/CCITT-FALSE over bytes 0..5 |
 
 **Timing**
 
@@ -242,7 +257,7 @@ packet = bytes(spi.xfer2([0] * 32))
 ss.off()
 
 (magic, tick_ms, lat_e7, lon_e7, alt_cm, hdop_centi, residual_cm,
- status, used, rejected, has_fix, crc) = struct.unpack("<IIiiiHHBBBB2xH", packet)
+ status, used, rejected, has_fix, commands, crc) = struct.unpack("<IIiiiHHBBBBBxH", packet)
 
 if magic == 0x31464745 and crc == binascii.crc_hqx(packet[:30], 0xFFFF) and has_fix:
     print(f"{lat_e7 / 1e7:.7f}, {lon_e7 / 1e7:.7f}  alt {alt_cm / 100:.2f} m  "

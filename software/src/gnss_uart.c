@@ -1,5 +1,8 @@
 #include "gnss_uart.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -29,12 +32,25 @@ typedef enum {
 	SOFT_RX_STOP = 3,
 } SoftRxState;
 
+/* Oversampling of the software UART: the TIM3 tick runs at baud * SOFT_UART_OVERSAMPLE. */
+#define SOFT_UART_OVERSAMPLE 8u
+
 typedef struct {
 	SoftRxState state;
 	uint8_t sub_tick;
 	uint8_t bit_index;
 	uint8_t byte;
 	RingBuffer rb;
+
+	/*
+	 * TX, driven from the same tick. Idle when tx_pos >= tx_len. The writer only touches the
+	 * buffer while idle and publishes it by setting tx_len last.
+	 */
+	uint8_t tx_buf[GNSS_UART_TX_SIZE];
+	volatile uint16_t tx_len;
+	volatile uint16_t tx_pos;
+	uint8_t tx_sub;
+	uint8_t tx_bit; /* 0 = start bit, 1..8 = data bits (LSB first), 9 = stop bit. */
 } SoftUartChannel;
 
 static SoftUartChannel soft_channels[GNSS_MODULE_COUNT];
@@ -164,11 +180,19 @@ void GnssUart_GpioInit(void) {
 		gpio.Pull = GPIO_PULLUP;
 		HAL_GPIO_Init(pins->rx_port, &gpio);
 
-		/* TX: HW UART uses alternate function; otherwise default to GPIO output. */
+		/*
+		 * TX: HW UART uses alternate function; software UART drives a push-pull GPIO, set to the
+		 * idle (high) level before switching it to output so the module never sees a start bit.
+		 */
 		gpio.Pin = pins->tx_pin;
 		gpio.Pull = GPIO_NOPULL;
 		gpio.Speed = GPIO_SPEED_FREQ_HIGH;
-		gpio.Mode = (pins->uart_instance != NULL) ? GPIO_MODE_AF_PP : GPIO_MODE_INPUT;
+		if (pins->uart_instance != NULL) {
+			gpio.Mode = GPIO_MODE_AF_PP;
+		} else {
+			HAL_GPIO_WritePin(pins->tx_port, pins->tx_pin, GPIO_PIN_SET);
+			gpio.Mode = GPIO_MODE_OUTPUT_PP;
+		}
 		HAL_GPIO_Init(pins->tx_port, &gpio);
 	}
 }
@@ -281,6 +305,30 @@ static bool read_pin(GPIO_TypeDef *port, uint16_t pin) {
 	return (port->IDR & pin) != 0;
 }
 
+static void soft_tx_tick(SoftUartChannel *ch, const GnssUartPins *pins) {
+	if (ch->tx_pos >= ch->tx_len) {
+		return;
+	}
+	if (ch->tx_sub == 0) {
+		bool level;
+		if (ch->tx_bit == 0) {
+			level = false;
+		} else if (ch->tx_bit <= 8u) {
+			level = ((ch->tx_buf[ch->tx_pos] >> (ch->tx_bit - 1u)) & 1u) != 0;
+		} else {
+			level = true;
+		}
+		pins->tx_port->BSRR = level ? (uint32_t)pins->tx_pin : ((uint32_t)pins->tx_pin << 16);
+	}
+	if (++ch->tx_sub == SOFT_UART_OVERSAMPLE) {
+		ch->tx_sub = 0;
+		if (++ch->tx_bit == 10u) {
+			ch->tx_bit = 0;
+			ch->tx_pos++;
+		}
+	}
+}
+
 static void soft_uart_tick(void) {
 	for (size_t i = 0; i < GNSS_MODULE_COUNT; i++) {
 		const GnssUartPins *pins = &kGnssUartPins[i];
@@ -289,6 +337,7 @@ static void soft_uart_tick(void) {
 		}
 
 		SoftUartChannel *ch = &soft_channels[i];
+		soft_tx_tick(ch, pins);
 		bool level = read_pin(pins->rx_port, pins->rx_pin);
 
 		switch (ch->state) {
@@ -300,7 +349,7 @@ static void soft_uart_tick(void) {
 			break;
 		case SOFT_RX_START:
 			ch->sub_tick++;
-			if (ch->sub_tick == 4) {
+			if (ch->sub_tick == SOFT_UART_OVERSAMPLE / 2u) {
 				if (!level) {
 					ch->state = SOFT_RX_DATA;
 					ch->sub_tick = 0;
@@ -313,7 +362,7 @@ static void soft_uart_tick(void) {
 			break;
 		case SOFT_RX_DATA:
 			ch->sub_tick++;
-			if (ch->sub_tick == 8) {
+			if (ch->sub_tick == SOFT_UART_OVERSAMPLE) {
 				if (level) {
 					ch->byte |= (uint8_t)(1u << ch->bit_index);
 				}
@@ -326,7 +375,7 @@ static void soft_uart_tick(void) {
 			break;
 		case SOFT_RX_STOP:
 			ch->sub_tick++;
-			if (ch->sub_tick == 8) {
+			if (ch->sub_tick == SOFT_UART_OVERSAMPLE) {
 				if (level) {
 					ring_push_byte(&ch->rb, ch->byte);
 				}
@@ -345,44 +394,104 @@ static void soft_uart_tick(void) {
 void GnssUart_SoftUartInit(uint32_t baudrate) {
 	memset(soft_channels, 0, sizeof(soft_channels));
 
-	__HAL_RCC_TIM2_CLK_ENABLE();
+	/*
+	 * TIM3 only generates the sampling tick (update interrupt, no channel enabled), so its
+	 * channel pins (PA6/PA7/PB0/PB1) keep their GPIO roles. TIM2 is left to the PPS capture.
+	 *
+	 * The timer counts the raw timer clock (no prescaler): at 64 MHz the tick period is
+	 * rounded to 1/64 us, which keeps the baud error far below the UART tolerance.
+	 */
+	__HAL_RCC_TIM3_CLK_ENABLE();
 
-	uint32_t pclk1 = HAL_RCC_GetPCLK1Freq();
-	uint32_t tim_clk = pclk1;
-	uint32_t ppre1 = (RCC->CFGR & RCC_CFGR_PPRE1);
-	if (ppre1 != RCC_CFGR_PPRE1_DIV1) {
-		tim_clk = pclk1 * 2u;
+	uint32_t tim_clk = HAL_RCC_GetPCLK1Freq();
+	if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) {
+		tim_clk *= 2u;
 	}
 
-	uint32_t base_hz = 1000000u;
-	uint32_t prescaler = (tim_clk / base_hz);
-	if (prescaler == 0) {
-		prescaler = 1;
+	uint32_t tick_hz = baudrate * SOFT_UART_OVERSAMPLE;
+	uint32_t period = (tim_clk + (tick_hz / 2u)) / tick_hz;
+	if (period < 2u) {
+		period = 2u;
 	}
-	prescaler -= 1u;
-
-	uint32_t tick_hz = baudrate * 8u;
-	uint32_t period = (base_hz + (tick_hz / 2u)) / tick_hz;
-	if (period == 0) {
-		period = 1;
+	if (period > 0x10000u) {
+		period = 0x10000u;
 	}
-	period -= 1u;
 
-	HAL_NVIC_SetPriority(TIM2_IRQn, 6, 0);
-	HAL_NVIC_EnableIRQ(TIM2_IRQn);
+	HAL_NVIC_SetPriority(TIM3_IRQn, 6, 0);
+	HAL_NVIC_EnableIRQ(TIM3_IRQn);
 
-	TIM2->PSC = (uint16_t)(prescaler > 0xFFFFu ? 0xFFFFu : prescaler);
-	TIM2->ARR = (uint16_t)(period > 0xFFFFu ? 0xFFFFu : period);
-	TIM2->CNT = 0;
-	TIM2->EGR = TIM_EGR_UG;
-	TIM2->SR = 0;
-	TIM2->DIER |= TIM_DIER_UIE;
-	TIM2->CR1 |= TIM_CR1_CEN;
+	TIM3->CR1 = 0;
+	TIM3->PSC = 0;
+	TIM3->ARR = (uint16_t)(period - 1u);
+	TIM3->CNT = 0;
+	TIM3->EGR = TIM_EGR_UG;
+	TIM3->SR = 0;
+	TIM3->DIER = TIM_DIER_UIE;
+	TIM3->CR1 = TIM_CR1_CEN;
 }
 
 void GnssUart_TimIrqHandler(void) {
-	if ((TIM2->SR & TIM_SR_UIF) != 0) {
-		TIM2->SR &= ~TIM_SR_UIF;
+	if ((TIM3->SR & TIM_SR_UIF) != 0) {
+		TIM3->SR = ~TIM_SR_UIF;
 		soft_uart_tick();
 	}
+}
+
+static SoftUartChannel *soft_channel_for_module(uint8_t module_index) {
+	if (module_index < 1 || module_index > GNSS_MODULE_COUNT) {
+		return NULL;
+	}
+	if (kGnssUartPins[module_index - 1].uart_instance != NULL) {
+		return NULL;
+	}
+	return &soft_channels[module_index - 1];
+}
+
+bool GnssUart_TxBusy(uint8_t module_index) {
+	SoftUartChannel *ch = soft_channel_for_module(module_index);
+	return ch != NULL && ch->tx_pos < ch->tx_len;
+}
+
+/* Wait for a software channel to go idle: sleeps once the scheduler runs, spins before. */
+static bool soft_tx_wait_idle(uint8_t module_index, uint32_t start, uint32_t timeout_ms) {
+	while (GnssUart_TxBusy(module_index)) {
+		if ((HAL_GetTick() - start) >= timeout_ms) {
+			return false;
+		}
+		if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+			vTaskDelay(1);
+		}
+	}
+	return true;
+}
+
+bool GnssUart_Write(uint8_t module_index, const uint8_t *data, size_t len, uint32_t timeout_ms) {
+	if (data == NULL || len == 0) {
+		return true;
+	}
+
+	UART_HandleTypeDef *huart = GnssUart_GetHardwareHandle(module_index);
+	if (huart != NULL && huart->Instance != NULL) {
+		if (len > 0xFFFFu) {
+			return false;
+		}
+		return HAL_UART_Transmit(huart, data, (uint16_t)len, timeout_ms) == HAL_OK;
+	}
+
+	SoftUartChannel *ch = soft_channel_for_module(module_index);
+	if (ch == NULL || len > sizeof(ch->tx_buf)) {
+		return false;
+	}
+
+	uint32_t start = HAL_GetTick();
+	if (!soft_tx_wait_idle(module_index, start, timeout_ms)) {
+		return false;
+	}
+
+	ch->tx_len = 0;
+	ch->tx_pos = 0;
+	memcpy(ch->tx_buf, data, len);
+	ch->tx_len = (uint16_t)len;
+
+	return soft_tx_wait_idle(module_index, start, timeout_ms);
 }
